@@ -22,6 +22,7 @@ public class SerialPortWrapper {
     private OutputStream out;
     private InputStream in;
     private Thread readThread;
+    private static final int BUFFER_SIZE = 1024;
     private Remover remover;
 
     private AtomicBoolean closed = new AtomicBoolean(false);
@@ -37,21 +38,28 @@ public class SerialPortWrapper {
         this.readThread = new Thread(new Runnable() {
             @Override
             public void run() {
-                byte[] buffer = new byte[64];
+                byte[] buffer = new byte[BUFFER_SIZE];
                 while (!closed.get()) {
                     try {
-                        int size;
                         if (in == null) return;
-                        size = in.read(buffer);
+                        
+                        int size = in.read(buffer);
                         if (size > 0) {
                             WritableMap event = Arguments.createMap();
                             String hex = SerialPortApiModule.bytesToHex(buffer, size);
                             event.putString("data", hex);
                             event.putString("path", path);
+                            Log.i("serialport", "read size: " + size + ", hex: " + hex);
                             sender.sendEvent(DataReceivedEvent, event);
                         }
+                        
+                        Thread.sleep(10);
                     } catch (IOException e) {
+                        Log.e("serialport", "Error reading data: " + e.getMessage());
                         e.printStackTrace();
+                        return;
+                    } catch (InterruptedException e) {
+                        Log.e("serialport", "Thread interrupted: " + e.getMessage());
                         return;
                     }
                 }
