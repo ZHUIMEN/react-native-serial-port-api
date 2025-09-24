@@ -51,8 +51,6 @@ public class SerialPortWrapper {
                             Log.i("serialport", "read size: " + size + ", hex: " + hex);
                             sender.sendEvent(DataReceivedEvent, event);
                         }
-                        
-                        Thread.sleep(10);
                     } catch (IOException e) {
                         Log.e("serialport", "Error reading data: " + e.getMessage());
                         e.printStackTrace();
