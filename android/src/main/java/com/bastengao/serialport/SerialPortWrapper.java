@@ -23,9 +23,11 @@ public class SerialPortWrapper {
     private InputStream in;
     private Thread readThread;
     private Remover remover;
+    private CmdProtocolParser protocolParser; // 新增协议解析器
 
     private AtomicBoolean closed = new AtomicBoolean(false);
 
+    // readBufferSize 现在作为内部 RingBuffer 的容量
     public SerialPortWrapper(final String path, final int readBufferSize, SerialPort serialPort, final EventSender sender, Remover remover) {
         this.path = path;
         this.serialPort = serialPort;
@@ -33,30 +35,42 @@ public class SerialPortWrapper {
         this.remover = remover;
         this.out = this.serialPort.getOutputStream();
         this.in = this.serialPort.getInputStream();
+        
+        // 初始化协议解析器
+        this.protocolParser = new CmdProtocolParser(new CmdProtocolParser.PacketListener() {
+            @Override
+            public void onPacketReceived(byte[] packet) {
+                // 当解析器成功解析出一个完整数据包时，此回调被触发
+                WritableMap event = Arguments.createMap();
+                String hex = SerialPortApiModule.bytesToHex(packet, packet.length);
+                event.putString("data", hex);
+                event.putString("path", path);
+                Log.i("serialport", "read complete packet, size: " + packet.length + ", hex: " + hex);
+                sender.sendEvent(DataReceivedEvent, event);
+            }
+        }, readBufferSize * 2); // RingBuffer容量可以设置得比单次读取缓冲区更大
 
         this.readThread = new Thread(new Runnable() {
             @Override
             public void run() {
+                // 这个buffer只是用于in.read()的临时存储
                 byte[] buffer = new byte[readBufferSize];
                 while (!closed.get()) {
                     try {
                         if (in == null) return;
                         
+                        // 从输入流读取数据到临时buffer
                         int size = in.read(buffer);
+
                         if (size > 0) {
-                            WritableMap event = Arguments.createMap();
-                            String hex = SerialPortApiModule.bytesToHex(buffer, size);
-                            event.putString("data", hex);
-                            event.putString("path", path);
-                            Log.i("serialport", "read size: " + size + ", hex: " + hex);
-                            sender.sendEvent(DataReceivedEvent, event);
+                            // 将读取到的数据块送入协议解析器进行处理
+                            protocolParser.handleData(buffer, size);
                         }
                     } catch (IOException e) {
-                        Log.e("serialport", "Error reading data: " + e.getMessage());
-                        e.printStackTrace();
-                        return;
-                    } catch (InterruptedException e) {
-                        Log.e("serialport", "Thread interrupted: " + e.getMessage());
+                        if (!closed.get()) {
+                           Log.e("serialport", "Error reading data: " + e.getMessage());
+                           e.printStackTrace();
+                        }
                         return;
                     }
                 }
@@ -73,17 +87,24 @@ public class SerialPortWrapper {
 
     public void write(byte[] buffer) throws IOException {
         this.out.write(buffer);
-
     }
 
     public void close() {
-        closed.set(true);
+        if (closed.getAndSet(true)) {
+            return;
+        }
+        
+        if (readThread != null) {
+            readThread.interrupt();
+        }
+        
         try {
-            in.close();
-            out.close();
+            if (in != null) in.close();
+            if (out != null) out.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
+        
         if (this.remover != null) {
             this.remover.remove();
         }
