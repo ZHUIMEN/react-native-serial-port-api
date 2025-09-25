@@ -48,13 +48,15 @@ public class CmdProtocolParser {
         // 将新数据写入环形缓冲区
         boolean success = ringBuffer.write(data, 0, size);
         if (!success) {
-            Log.e("serialport", "RingBuffer overflow! Discarding old data.");
+            Log.e("serialport", "RingBuffer 溢出！丢弃旧数据。");
             // 实际应用中可能需要更复杂的处理，例如清空缓冲区或扩容
         }
 
         // 循环解析，直到缓冲区中没有完整的数据包
         while (true) {
-            if (!parse());
+            if (!parse()) {
+                break;
+            };
         }
     }
     
@@ -67,6 +69,7 @@ public class CmdProtocolParser {
         int headerIndex = ringBuffer.indexOf(FRAME_HEADER);
         if (headerIndex == -1) {
             // 没有找到帧头，无法继续
+            Log.e("serialport", "parse: 没有找到帧头，无法继续");
             return false;
         }
 
@@ -88,7 +91,7 @@ public class CmdProtocolParser {
 
         // 5. 验证包长度
         if (packetLength < MIN_PACKET_LENGTH) {
-             Log.e("serialport", "Invalid packet length: " + packetLength + ". Discarding header.");
+             Log.e("serialport", "数据包长度无效: " + packetLength + ". 丢弃标头.");
              ringBuffer.discard(1); // 丢弃无效的帧头，继续寻找下一个
              return true; // 继续尝试
         }
@@ -96,6 +99,7 @@ public class CmdProtocolParser {
         // 6. 检查缓冲区中是否有完整的包
         if (ringBuffer.size() < packetLength) {
             // 数据包不完整，等待更多数据
+            Log.e("serialport", "数据包不完整，等待更多数据");
             return false;
         }
 
@@ -103,12 +107,13 @@ public class CmdProtocolParser {
         byte[] potentialPacket = ringBuffer.read(packetLength);
         if (potentialPacket == null) {
             // 理论上不会发生，因为前面已检查过长度
+            Log.e("serialport", "理论上不会发生，因为前面已检查过长度");
             return false;
         }
 
         // 8. 验证帧尾
         if (potentialPacket[packetLength - 1] != FRAME_TAIL) {
-            Log.e("serialport", "Invalid frame tail. Packet discarded.");
+            Log.e("serialport", "无效的框架尾部。丢弃的数据包.");
             // 帧尾不匹配，说明这个包是错误的。从下一个字节开始重新寻找帧头
             // 因为我们已经消耗了数据，所以返回true让外层循环继续
             return true;
@@ -121,12 +126,12 @@ public class CmdProtocolParser {
         byte actualBcc = potentialPacket[packetLength - 2];
 
         if (expectedBcc != actualBcc) {
-            Log.e("serialport", "BCC checksum failed. Packet discarded.");
+            Log.e("serialport", "BCC 校验和失败。丢弃数据包。");
             return true;
         }
 
         // 10. 校验通过，这是一个完整的包
-        Log.i("serialport", "Complete packet found with length: " + packetLength);
+        Log.i("serialport", "找到完整的数据包，长度: " + packetLength);
         if (listener != null) {
             listener.onPacketReceived(potentialPacket);
         }

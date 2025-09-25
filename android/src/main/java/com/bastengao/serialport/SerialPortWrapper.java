@@ -45,7 +45,7 @@ public class SerialPortWrapper {
                 String hex = SerialPortApiModule.bytesToHex(packet, packet.length);
                 event.putString("data", hex);
                 event.putString("path", path);
-                Log.i("serialport", "read complete packet, size: " + packet.length + ", hex: " + hex);
+                Log.i("serialport", "读取完整数据包，大小: " + packet.length + ", hex: " + hex);
                 sender.sendEvent(DataReceivedEvent, event);
             }
         }, readBufferSize * 2); // RingBuffer容量可以设置得比单次读取缓冲区更大
@@ -61,7 +61,11 @@ public class SerialPortWrapper {
                         
                         // 从输入流读取数据到临时buffer
                         int size = in.read(buffer);
-
+                        String hex = SerialPortApiModule.bytesToHex(buffer, size);
+                        WritableMap event = Arguments.createMap();
+                        event.putString("data", hex);
+                        event.putString("path", path);
+                        Log.i("serialport", "read size: " + size + ", hex: " + hex);
                         if (size > 0) {
                             // 将读取到的数据块送入协议解析器进行处理
                             protocolParser.handleData(buffer, size);
